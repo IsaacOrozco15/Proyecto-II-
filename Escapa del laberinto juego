@@ -1,0 +1,107 @@
+# Segundo proyecto de introducción a la programación
+# Isaac Orozco y Daniel Araya
+
+# Imports 
+import random
+import time
+import json
+import os
+from collections import deque, namedtuple
+
+
+import tkinter as tk
+from tkinter import messagebox, simpledialog, ttk
+
+FILAS = 12
+COLUMNAS = 18
+
+NUM_ENEMIGOS = 3
+TIEMPO_REAPARICION_ENEMIGO = 10  # segundos
+COOLDOWN_TRAMPA = 5  # segundos entre colocaciones
+MAX_TRAMPAS_ACTIVAS = 3
+
+COSTO_CORRER_POR_MOVIMIENTO = 10
+RECUPERACION_ENERGIA_POR_TURNO = 5
+ENERGIA_MAXIMA = 100
+
+ARCHIVO_PUNTAJES = "puntajes.json"
+
+Punto = namedtuple("Punto", ["r", "c"])
+
+
+def dentro(r, c):  # Verifica si una posición está dentro del mapa
+    return 0 <= r < FILAS and 0 <= c < COLUMNAS
+
+
+# CLASES DE CASILLAS
+
+class Casilla:  # CLASE BASE
+
+    simbolo = "?"
+
+    def accesible_por_jugador(self):
+        return False
+
+    def accesible_por_enemigo(self):
+        return False
+
+    def __str__(self):
+        return self.simbolo
+
+
+class Camino(Casilla):
+    simbolo = "."
+
+    def accesible_por_jugador(self): return True
+
+    def accesible_por_enemigo(self): return True
+
+
+class Liana(Casilla):
+    simbolo = "L"
+
+    def accesible_por_jugador(self): return False
+
+    def accesible_por_enemigo(self): return True
+
+
+class Tunel(Casilla):
+    simbolo = "T"
+
+    def accesible_por_jugador(self): return True
+
+    def accesible_por_enemigo(self): return False
+
+
+class Muro(Casilla):
+    simbolo = "#"
+
+    def accesible_por_jugador(self): return False
+
+    def accesible_por_enemigo(self): return False
+
+
+class Salida(Casilla):
+    simbolo = "S"
+
+    def accesible_por_jugador(self): return True
+
+    def accesible_por_enemigo(self): return True
+
+
+class Trampa(Casilla):
+    def __init__(self):
+        self.activa = True
+        self.tiempo_colocacion = time.time()
+
+    simbolo = "X"
+
+    def accesible_por_jugador(self): return True
+
+    def accesible_por_enemigo(self): return True
+
+    def activar_trampa(self):
+        """Activa la trampa cuando un enemigo la toca"""
+        self.activa = False
+        return True  # Indica que el enemigo debe ser eliminado
+
