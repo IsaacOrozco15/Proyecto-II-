@@ -329,3 +329,46 @@ class GeneradorMapa:
                     fila += "J "
                 else:
                     fila += self.mapa[r][c].simbolo + " "
+            print(fila)
+        print()
+# ----------------- FUNCIÓN PRINCIPAL DE GENERACIÓN -----------------
+def generar_mapa_juego():
+    """Genera un mapa válido para el juego"""
+    max_intentos = 10
+
+    for intento in range(max_intentos):
+        generador = GeneradorMapa()
+        mapa = generador.generar_mapa_aleatorio()
+
+        # Verificar que el mapa es válido
+        if generador.verificar_camino_valido():
+            print(f"Mapa generado exitosamente en el intento {intento + 1}")
+            return generador
+        else:
+            print(f"Intento {intento + 1} falló - regenerando mapa...")
+
+    # Si no se pudo generar un mapa válido, crear uno simple
+    return _generar_mapa_simple()
+
+
+def _generar_mapa_simple():
+    """Genera un mapa simple como respaldo"""
+    generador = GeneradorMapa()
+
+    # Crear mapa simple con caminos en forma de cruz
+    for r in range(generador.filas):
+        for c in range(generador.columnas):
+            if r == generador.filas // 2 or c == generador.columnas // 2:
+                generador.mapa[r][c] = Camino()
+            else:
+                generador.mapa[r][c] = Muro()
+
+    # Colocar salidas en las esquinas
+    generador.mapa[0][0] = Salida()
+    generador.mapa[0][generador.columnas - 1] = Salida()
+    generador.salidas = [Punto(0, 0), Punto(0, generador.columnas - 1)]
+
+    # Colocar jugador en el centro
+    generador.posicion_jugador = Punto(generador.filas // 2, generador.columnas // 2)
+
+    return generador
