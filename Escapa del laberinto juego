@@ -517,3 +517,67 @@ def _generar_mapa_simple():
 
     return generador
 
+
+# ----------------- UTILIDADES DEL MAPA -----------------
+def obtener_posiciones_libres(mapa, tipo_casilla=None):
+    """Obtiene todas las posiciones libres del mapa"""
+    posiciones = []
+    for r in range(len(mapa)):
+        for c in range(len(mapa[0])):
+            if tipo_casilla is None:
+                if mapa[r][c].accesible_por_jugador():
+                    posiciones.append(Punto(r, c))
+            else:
+                if isinstance(mapa[r][c], tipo_casilla):
+                    posiciones.append(Punto(r, c))
+    return posiciones
+
+
+def obtener_posiciones_enemigos(mapa, num_enemigos=NUM_ENEMIGOS, posicion_jugador=None):
+    """Obtiene posiciones aleatorias válidas para colocar enemigos, evitando la posición del jugador"""
+    posiciones_libres = obtener_posiciones_libres(mapa, Camino)
+    
+    # Si se proporciona posición del jugador, filtrar posiciones muy cercanas
+    if posicion_jugador:
+        posiciones_validas = []
+        for pos in posiciones_libres:
+            # Calcular distancia Manhattan
+            distancia = abs(pos.r - posicion_jugador.r) + abs(pos.c - posicion_jugador.c)
+            if distancia >= 4:  # Mínimo 4 casillas de distancia del jugador
+                posiciones_validas.append(pos)
+        posiciones_libres = posiciones_validas if posiciones_validas else posiciones_libres
+
+    if len(posiciones_libres) < num_enemigos:
+        return posiciones_libres  # Devolver todas las disponibles
+
+    return random.sample(posiciones_libres, num_enemigos)
+
+
+def es_posicion_valida(mapa, r, c, es_jugador=True):
+    """Verifica si una posición es válida para movimiento"""
+    if not dentro(r, c):
+        return False
+
+    if es_jugador:
+        return mapa[r][c].accesible_por_jugador()
+    else:
+        return mapa[r][c].accesible_por_enemigo()
+
+
+def colocar_trampa(mapa, r, c):
+    """Coloca una trampa en la posición especificada"""
+    if (dentro(r, c) and
+            isinstance(mapa[r][c], Camino)):
+        mapa[r][c] = Trampa()
+        return True
+    return False
+
+
+def remover_trampa(mapa, r, c):
+    """Remueve una trampa y la convierte de vuelta en camino"""
+    if (dentro(r, c) and
+            isinstance(mapa[r][c], Trampa)):
+        mapa[r][c] = Camino()
+        return True
+    return False
+
