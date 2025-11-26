@@ -1,16 +1,25 @@
-# Segundo proyecto de introducción a la programación
+# Segundo proyecto de introducción a la programación - Escapa del Laberinto
 # Isaac Orozco y Daniel Araya
+#
 
-# Imports 
+# Imports estándar de Python
 import random
 import time
 import json
 import os
+import datetime
 from collections import deque, namedtuple
 
-
+# Imports de tkinter 
 import tkinter as tk
 from tkinter import messagebox, simpledialog, ttk
+
+# (Asegúrate de tener `from PIL import Image, ImageTk` arriba del archivo o manejar el fallback)
+try:
+    from PIL import Image, ImageTk
+    PIL_AVAILABLE = True
+except Exception:
+    PIL_AVAILABLE = False
 
 FILAS = 12
 COLUMNAS = 18
@@ -24,7 +33,8 @@ COSTO_CORRER_POR_MOVIMIENTO = 10
 RECUPERACION_ENERGIA_POR_TURNO = 5
 ENERGIA_MAXIMA = 100
 
-ARCHIVO_PUNTAJES = "puntajes.json"
+ARCHIVO_PUNTAJES_ESCAPA = "puntajes_escapa.txt"
+ARCHIVO_PUNTAJES_CAZADOR = "puntajes_cazador.txt"
 
 Punto = namedtuple("Punto", ["r", "c"])
 
@@ -56,13 +66,38 @@ class Camino(Casilla):
 
     def accesible_por_enemigo(self): return True
 
-
 class Liana(Casilla):
     simbolo = "L"
+    imagen = None
+    imagen_path = None
+
+    @classmethod
+    def init_imagen_path(cls):
+        if cls.imagen_path is None:
+            base = os.path.dirname(os.path.abspath(__file__))
+            cls.imagen_path = os.path.join(base, "Objetos", "liana.png")
+
+    @classmethod
+    def cargar_imagen(cls, tamano):
+        cls.init_imagen_path()
+        if not os.path.exists(cls.imagen_path):
+            cls.imagen = None
+            print(f"[Liana] No encontrado: {cls.imagen_path}")
+            return
+        try:
+            if PIL_AVAILABLE:
+                img = Image.open(cls.imagen_path).convert("RGBA")
+                img = img.resize((tamano, tamano), Image.Resampling.LANCZOS)
+                cls.imagen = ImageTk.PhotoImage(img)
+            else:
+                cls.imagen = tk.PhotoImage(file=cls.imagen_path)
+        except Exception as e:
+            print(f"[Liana] Error cargando imagen '{cls.imagen_path}': {e}")
+            cls.imagen = None
 
     def accesible_por_jugador(self): return False
-
     def accesible_por_enemigo(self): return True
+
 
 
 class Tunel(Casilla):
@@ -73,12 +108,51 @@ class Tunel(Casilla):
     def accesible_por_enemigo(self): return False
 
 
+
 class Muro(Casilla):
     simbolo = "#"
+    imagen = None            # PhotoImage cached
+    imagen_path = None       # ruta absoluta al PNG usado por la clase
+
+    @classmethod
+    def init_imagen_path(cls):
+        # determina la ruta relativa correcta basada en la ubicación del script
+        if cls.imagen_path is None:
+            base = os.path.dirname(os.path.abspath(__file__))
+            cls.imagen_path = os.path.join(base, "Objetos", "muro.png")
+
+    @classmethod
+    def cargar_imagen(cls, tamano):
+        """
+        Carga y escala la imagen del muro a (tamano x tamano).
+        - Debe llamarse DESPUÉS de crear el Tk() principal.
+        - Guarda la PhotoImage en cls.imagen (evita GC).
+        """
+        cls.init_imagen_path()
+        if not os.path.exists(cls.imagen_path):
+            # No existe el asset: dejar imagen en None (fallback a rectángulo)
+            cls.imagen = None
+            # opcional: print para depuración
+            print(f"[Muro] No encontrado: {cls.imagen_path}")
+            return
+
+        try:
+            if PIL_AVAILABLE:
+                img = Image.open(cls.imagen_path).convert("RGBA")
+                # redimensionar con filtro de alta calidad
+                img = img.resize((tamano, tamano), Image.Resampling.LANCZOS)
+                cls.imagen = ImageTk.PhotoImage(img)
+            else:
+                # PhotoImage no escala; se espera que la imagen ya tenga el tamaño correcto
+                cls.imagen = tk.PhotoImage(file=cls.imagen_path)
+        except Exception as e:
+            print(f"[Muro] Error cargando imagen '{cls.imagen_path}': {e}")
+            cls.imagen = None
 
     def accesible_por_jugador(self): return False
 
     def accesible_por_enemigo(self): return False
+
 
 
 class Salida(Casilla):
@@ -86,7 +160,7 @@ class Salida(Casilla):
 
     def accesible_por_jugador(self): return True
 
-    def accesible_por_enemigo(self): return True
+    def accesible_por_enemigo(self): return False  # Los cazadores no pueden usar las salidas
 
 
 class Trampa(Casilla):
@@ -104,271 +178,3 @@ class Trampa(Casilla):
         """Activa la trampa cuando un enemigo la toca"""
         self.activa = False
         return True  # Indica que el enemigo debe ser eliminado
-
- #----------------- GENERADOR DE MAPA -----------------
-class GeneradorMapa:
-    def __init__(self, filas=FILAS, columnas=COLUMNAS):
-        self.filas = filas
-        self.columnas = columnas
-        self.mapa = []
-        self.posicion_jugador = None
-        self.salidas = []
-
-    def generar_mapa_aleatorio(self):
-        """Genera un mapa aleatorio con camino garantizado a la salida"""
-        # Inicializar mapa con muros
-        self.mapa = [[Muro() for _ in range(self.columnas)] for _ in range(self.filas)]
-
-        # Generar caminos usando algoritmo de laberinto
-        self._generar_laberinto()
-
-        # Agregar elementos especiales
-        self._agregar_lianas()
-        self._agregar_tuneles()
-        self._colocar_salidas()
-        self._colocar_jugador()
-
-        return self.mapa
-
-    def _generar_laberinto(self):
-        """Genera caminos usando algoritmo de búsqueda en profundidad"""
-        # Stack para DFS
-        stack = []
-        visitados = set()
-
-        # Empezar desde una posición aleatoria (debe ser impar para el algoritmo)
-        inicio_r = random.randrange(1, self.filas - 1, 2)
-        inicio_c = random.randrange(1, self.columnas - 1, 2)
-
-        stack.append((inicio_r, inicio_c))
-        self.mapa[inicio_r][inicio_c] = Camino()
-        visitados.add((inicio_r, inicio_c))
-
-        direcciones = [(0, 2), (2, 0), (0, -2), (-2, 0)]  # Derecha, Abajo, Izquierda, Arriba
-
-        while stack:
-            actual_r, actual_c = stack[-1]
-
-            # Buscar vecinos no visitados
-            vecinos = []
-            for dr, dc in direcciones:
-                nuevo_r, nuevo_c = actual_r + dr, actual_c + dc
-                if (0 < nuevo_r < self.filas - 1 and
-                        0 < nuevo_c < self.columnas - 1 and
-                        (nuevo_r, nuevo_c) not in visitados):
-                    vecinos.append((nuevo_r, nuevo_c))
-
-            if vecinos:
-                # Elegir vecino aleatorio
-                siguiente_r, siguiente_c = random.choice(vecinos)
-
-                # Crear camino entre actual y siguiente
-                pared_r = actual_r + (siguiente_r - actual_r) // 2
-                pared_c = actual_c + (siguiente_c - actual_c) // 2
-
-                self.mapa[pared_r][pared_c] = Camino()
-                self.mapa[siguiente_r][siguiente_c] = Camino()
-
-                visitados.add((siguiente_r, siguiente_c))
-                stack.append((siguiente_r, siguiente_c))
-            else:
-                stack.pop()
-
-        # Agregar caminos adicionales para hacer el laberinto menos lineal
-        self._agregar_caminos_adicionales()
-
-    def _agregar_caminos_adicionales(self):
-        """Agrega caminos adicionales para hacer el mapa más interesante"""
-        num_caminos_extra = random.randint(5, 15)
-
-        for _ in range(num_caminos_extra):
-            r = random.randint(1, self.filas - 2)
-            c = random.randint(1, self.columnas - 2)
-
-            # Solo convertir muros que tengan al menos un camino adyacente
-            if isinstance(self.mapa[r][c], Muro):
-                caminos_adyacentes = 0
-                for dr, dc in [(0, 1), (1, 0), (0, -1), (-1, 0)]:
-                    nr, nc = r + dr, c + dc
-                    if (dentro(nr, nc) and
-                            isinstance(self.mapa[nr][nc], Camino)):
-                        caminos_adyacentes += 1
-
-                if caminos_adyacentes >= 1:
-                    self.mapa[r][c] = Camino()
-
-    def _agregar_lianas(self):
-        """Agrega lianas en posiciones estratégicas"""
-        num_lianas = random.randint(8, 15)
-
-        for _ in range(num_lianas):
-            r = random.randint(0, self.filas - 1)
-            c = random.randint(0, self.columnas - 1)
-
-            if isinstance(self.mapa[r][c], Muro):
-                # Verificar que tenga al menos un camino cercano
-                tiene_camino_cercano = False
-                for dr in range(-2, 3):
-                    for dc in range(-2, 3):
-                        nr, nc = r + dr, c + dc
-                        if (dentro(nr, nc) and
-                                isinstance(self.mapa[nr][nc], Camino)):
-                            tiene_camino_cercano = True
-                            break
-                    if tiene_camino_cercano:
-                        break
-
-                if tiene_camino_cercano:
-                    self.mapa[r][c] = Liana()
-
-    def _agregar_tuneles(self):
-        """Agrega túneles para dar ventaja al jugador"""
-        num_tuneles = random.randint(5, 10)
-
-        for _ in range(num_tuneles):
-            r = random.randint(0, self.filas - 1)
-            c = random.randint(0, self.columnas - 1)
-
-            if isinstance(self.mapa[r][c], Muro):
-                self.mapa[r][c] = Tunel()
-
-    def _colocar_salidas(self):
-        """Coloca salidas en los bordes del mapa"""
-        self.salidas = []
-        num_salidas = random.randint(2, 4)
-
-        # Posibles posiciones de salida (bordes)
-        posiciones_borde = []
-
-        # Borde superior e inferior
-        for c in range(self.columnas):
-            posiciones_borde.append((0, c))
-            posiciones_borde.append((self.filas - 1, c))
-
-        # Borde izquierdo y derecho
-        for r in range(1, self.filas - 1):
-            posiciones_borde.append((r, 0))
-            posiciones_borde.append((r, self.columnas - 1))
-
-        # Elegir posiciones aleatorias para las salidas
-        salidas_elegidas = random.sample(posiciones_borde, min(num_salidas, len(posiciones_borde)))
-
-        for r, c in salidas_elegidas:
-            self.mapa[r][c] = Salida()
-            self.salidas.append(Punto(r, c))
-
-    def _colocar_jugador(self):
-        """Encuentra una posición válida para el jugador"""
-        # Buscar una posición de camino que no esté muy cerca de las salidas
-        intentos = 0
-        max_intentos = 100
-
-        while intentos < max_intentos:
-            r = random.randint(1, self.filas - 2)
-            c = random.randint(1, self.columnas - 2)
-
-            if isinstance(self.mapa[r][c], Camino):
-                # Verificar que no esté muy cerca de una salida
-                muy_cerca_salida = False
-                for salida in self.salidas:
-                    distancia = abs(r - salida.r) + abs(c - salida.c)
-                    if distancia < 3:  # Mínimo 3 casillas de distancia
-                        muy_cerca_salida = True
-                        break
-
-                if not muy_cerca_salida:
-                    self.posicion_jugador = Punto(r, c)
-                    return
-
-            intentos += 1
-
-        # Si no se encuentra una buena posición, usar cualquier camino
-        for r in range(self.filas):
-            for c in range(self.columnas):
-                if isinstance(self.mapa[r][c], Camino):
-                    self.posicion_jugador = Punto(r, c)
-                    return
-
-    def verificar_camino_valido(self):
-        """Verifica que existe al menos un camino válido desde el jugador hasta una salida"""
-        if not self.posicion_jugador or not self.salidas:
-            return False
-
-        # BFS para encontrar camino
-        queue = deque([self.posicion_jugador])
-        visitados = {self.posicion_jugador}
-
-        direcciones = [(0, 1), (1, 0), (0, -1), (-1, 0)]
-
-        while queue:
-            actual = queue.popleft()
-
-            # Verificar si llegamos a una salida
-            if actual in self.salidas:
-                return True
-
-            # Explorar vecinos
-            for dr, dc in direcciones:
-                nr, nc = actual.r + dr, actual.c + dc
-                nuevo_punto = Punto(nr, nc)
-
-                if (dentro(nr, nc) and
-                        nuevo_punto not in visitados and
-                        self.mapa[nr][nc].accesible_por_jugador()):
-                    visitados.add(nuevo_punto)
-                    queue.append(nuevo_punto)
-
-        return False
-
-    def mostrar_mapa(self):
-        """Muestra el mapa en consola para depuración"""
-        for r in range(self.filas):
-            fila = ""
-            for c in range(self.columnas):
-                if self.posicion_jugador and r == self.posicion_jugador.r and c == self.posicion_jugador.c:
-                    fila += "J "
-                else:
-                    fila += self.mapa[r][c].simbolo + " "
-            print(fila)
-        print()
-# ----------------- FUNCIÓN PRINCIPAL DE GENERACIÓN -----------------
-def generar_mapa_juego():
-    """Genera un mapa válido para el juego"""
-    max_intentos = 10
-
-    for intento in range(max_intentos):
-        generador = GeneradorMapa()
-        mapa = generador.generar_mapa_aleatorio()
-
-        # Verificar que el mapa es válido
-        if generador.verificar_camino_valido():
-            print(f"Mapa generado exitosamente en el intento {intento + 1}")
-            return generador
-        else:
-            print(f"Intento {intento + 1} falló - regenerando mapa...")
-
-    # Si no se pudo generar un mapa válido, crear uno simple
-    return _generar_mapa_simple()
-
-
-def _generar_mapa_simple():
-    """Genera un mapa simple como respaldo"""
-    generador = GeneradorMapa()
-
-    # Crear mapa simple con caminos en forma de cruz
-    for r in range(generador.filas):
-        for c in range(generador.columnas):
-            if r == generador.filas // 2 or c == generador.columnas // 2:
-                generador.mapa[r][c] = Camino()
-            else:
-                generador.mapa[r][c] = Muro()
-
-    # Colocar salidas en las esquinas
-    generador.mapa[0][0] = Salida()
-    generador.mapa[0][generador.columnas - 1] = Salida()
-    generador.salidas = [Punto(0, 0), Punto(0, generador.columnas - 1)]
-
-    # Colocar jugador en el centro
-    generador.posicion_jugador = Punto(generador.filas // 2, generador.columnas // 2)
-
-    return generador
