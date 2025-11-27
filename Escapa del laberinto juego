@@ -1066,3 +1066,164 @@ class JuegoLaberinto:
         self.canvas.create_rectangle(btn_x - btn_width//2, btn_y - btn_height//2, 
                                    btn_x + btn_width//2, btn_y + btn_height//2, 
                                    tags="puntajes", fill="", outline="")
+        btn_y += btn_spacing
+        
+        # Botón SALIR
+        self.canvas.create_rectangle(btn_x - btn_width//2, btn_y - btn_height//2, 
+                                   btn_x + btn_width//2, btn_y + btn_height//2, 
+                                   fill="lightgray", outline="black", width=2)
+        self.canvas.create_text(btn_x, btn_y, text="SALIR", font=("Arial", 11, "bold"))
+        self.canvas.tag_bind("salir", "<Button-1>", lambda e: self.root.quit())
+        self.canvas.create_rectangle(btn_x - btn_width//2, btn_y - btn_height//2, 
+                                   btn_x + btn_width//2, btn_y + btn_height//2, 
+                                   tags="salir", fill="", outline="")
+
+    def cambiar_dificultad(self):
+        """Cambia entre dificultad fácil y difícil"""
+        self.dificultad = "dificil" if self.dificultad == "facil" else "facil"
+        self.mostrar_menu_principal()  # Refrescar menú para mostrar cambio
+        
+        # Mostrar información sobre la dificultad seleccionada
+        if self.dificultad == "facil":
+            mensaje = "Dificultad FÁCIL seleccionada\n\n• Enemigos más lentos\n• Ideal para principiantes"
+        else:
+            mensaje = "Dificultad DIFÍCIL seleccionada\n\n• Enemigos más rápidos\n• Mayor desafío"
+        
+        messagebox.showinfo("Dificultad Cambiada", mensaje)
+
+    def iniciar_juego_con_dificultad(self, modo, dificultad):
+        """Inicia un juego con modo y dificultad específicos"""
+        self.dificultad = dificultad
+        self.iniciar_juego(modo)
+
+    def iniciar_juego(self, modo):
+        """Inicia un nuevo juego"""
+        # Pedir nombre del jugador
+        self.nombre_jugador = simpledialog.askstring(
+            "Nombre del Jugador",
+            "Introduce tu nombre:"
+        )
+
+        if not self.nombre_jugador or self.nombre_jugador.strip() == "":
+            messagebox.showwarning("Nombre requerido", "El registro es obligatorio. Debes introducir un nombre para jugar.")
+            return
+
+        # Limpiar el nombre (quitar espacios extra)
+        self.nombre_jugador = self.nombre_jugador.strip()
+
+        self.modo_juego = modo
+        self.juego_activo = True
+        self.juego_pausado = False
+        self.tiempo_inicio = time.time()
+        self.contador_frames = 0
+
+        # Generar mapa
+        self.generador = generar_mapa_juego()
+
+        # Crear jugador
+        self.jugador = Jugador(self.generador.posicion_jugador)
+
+        # Crear enemigos
+        posiciones_enemigos = obtener_posiciones_enemigos(self.generador.mapa, NUM_ENEMIGOS, self.jugador.posicion)
+        self.enemigos = [Enemigo(pos) for pos in posiciones_enemigos]
+
+        # Actualizar interfaz
+        self.actualizar_interfaz()
+        self.dibujar_mapa()
+
+        # Iniciar loop del juego
+        self.loop_juego()
+
+    def dibujar_mapa(self):
+        """Dibuja el mapa en el canvas usando imágenes si están disponibles."""
+        self.canvas.delete("all")
+
+        tam = self.TAMANO_CASILLA
+        mapa = self.generador.mapa
+
+        for r in range(self.generador.filas):
+            for c in range(self.generador.columnas):
+
+                x = c * tam
+                y = r * tam
+
+                casilla = mapa[r][c]
+
+                # ----- DIBUJO DE MURO -----
+                if isinstance(casilla, Muro):
+                    if Muro.imagen:
+                        self.canvas.create_image(x, y, anchor="nw", image=Muro.imagen)
+                    else:
+                        self.canvas.create_rectangle(x, y, x+tam, y+tam,
+                                                     fill=self.colores["#"],
+                                                     outline="gray")
+                    continue
+
+                # ----- DIBUJO DE LIANA -----
+                if isinstance(casilla, Liana):
+                    if Liana.imagen:
+                        self.canvas.create_image(x, y, anchor="nw", image=Liana.imagen)
+                    else:
+                        self.canvas.create_rectangle(x, y, x+tam, y+tam,
+                                                     fill=self.colores["L"],
+                                                     outline="gray")
+                    continue
+
+                # ----- CAMINO NORMAL -----
+                self.canvas.create_rectangle(x, y, x + tam, y + tam,
+                                             fill=self.colores.get(casilla.simbolo, "white"),
+                                             outline="gray")
+
+                # Si el símbolo no es ".", lo dibuja (opcional)
+                if casilla.simbolo != ".":
+                    self.canvas.create_text(
+                        x + tam // 2,
+                        y + tam // 2,
+                        text=casilla.simbolo,
+                        font=("Arial", 8, "bold"),
+                        fill="white" if casilla.simbolo in ["#", "L"] else "black"
+                    )
+
+        # ----- DIBUJAR JUGADOR -----
+        if self.jugador:
+            self.dibujar_entidad(self.jugador.posicion, "J", self.colores["J"])
+
+        # ----- DIBUJAR ENEMIGOS -----
+        for enemigo in self.enemigos:
+            if enemigo.vivo:
+                self.dibujar_entidad(enemigo.posicion, "E", self.colores["E"])
+
+
+        
+    def dibujar_entidad(self, posicion, simbolo, color):
+        """Dibuja una entidad (jugador o enemigo) en el mapa.
+        - Para 'J' intentará usar sprite según jugador.direccion.
+        - Para enemigos hace fallback a óvalo.
+        """
+        tam = self.TAMANO_CASILLA
+        x = posicion.c * tam
+        y = posicion.r * tam
+
+        if simbolo == "J":
+            direccion = getattr(self.jugador, "direccion", "down")
+            sprite = self.sprites_jugador.get(direccion)
+            if sprite:
+                # dibujar centrado en la casilla
+                cx = x + tam // 2
+                cy = y + tam // 2
+                img_id = self.canvas.create_image(cx, cy, image=sprite)
+                # mantener referencia para evitar GC
+                self._image_refs.append(sprite)
+                # limitar tamaño de la lista de referencias para no crecer indefinidamente
+                if len(self._image_refs) > 300:
+                    self._image_refs = self._image_refs[-150:]
+                return
+
+        # Fallback para jugador sin sprite o para enemigos: dibujo simple
+        x1 = x + 2
+        y1 = y + 2
+        x2 = x1 + tam - 4
+        y2 = y1 + tam - 4
+        self.canvas.create_oval(x1, y1, x2, y2, fill=color, outline="black", width=2)
+        # opcional: mostrar letra para debug
+  
