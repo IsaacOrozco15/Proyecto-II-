@@ -581,3 +581,49 @@ def remover_trampa(mapa, r, c):
         return True
     return False
 
+# ----------------- CLASE JUGADOR -----------------
+class Jugador:
+    def __init__(self, posicion):
+        self.posicion = posicion
+        self.energia = ENERGIA_MAXIMA
+        self.trampas_activas = 0
+        self.ultimo_uso_trampa = 0
+        self.puntaje = 0
+        self.vivo = True
+        self.direccion = "down"   # Dirección inicial por defecto
+
+
+    def mover(self, mapa, nueva_r, nueva_c, corriendo=False):
+        """Mueve el jugador a una nueva posición"""
+        if not es_posicion_valida(mapa, nueva_r, nueva_c, es_jugador=True):
+            return False
+
+        if corriendo:
+            if self.energia >= COSTO_CORRER_POR_MOVIMIENTO:
+                self.energia -= COSTO_CORRER_POR_MOVIMIENTO
+            else:
+                return False  # No hay suficiente energía para correr
+
+        self.posicion = Punto(nueva_r, nueva_c)
+        return True
+
+    def recuperar_energia(self):
+        """Recupera energía por turno"""
+        self.energia = min(self.energia + RECUPERACION_ENERGIA_POR_TURNO, ENERGIA_MAXIMA)
+
+    def puede_colocar_trampa(self):
+        """Verifica si puede colocar una trampa"""
+        tiempo_actual = time.time()
+        return (self.trampas_activas < MAX_TRAMPAS_ACTIVAS and
+                tiempo_actual - self.ultimo_uso_trampa >= COOLDOWN_TRAMPA)
+
+    def colocar_trampa_en_mapa(self, mapa):
+        """Coloca una trampa en la posición actual del jugador"""
+        if self.puede_colocar_trampa():
+            if colocar_trampa(mapa, self.posicion.r, self.posicion.c):
+                self.trampas_activas += 1
+                self.ultimo_uso_trampa = time.time()
+                return True
+        return False
+
+
