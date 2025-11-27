@@ -1225,5 +1225,5 @@ class JuegoLaberinto:
         x2 = x1 + tam - 4
         y2 = y1 + tam - 4
         self.canvas.create_oval(x1, y1, x2, y2, fill=color, outline="black", width=2)
-        # opcional: mostrar letra para debug
+        
   
