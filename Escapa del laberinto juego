@@ -14,7 +14,6 @@ from collections import deque, namedtuple
 import tkinter as tk
 from tkinter import messagebox, simpledialog, ttk
 
-# (Asegúrate de tener `from PIL import Image, ImageTk` arriba del archivo o manejar el fallback)
 try:
     from PIL import Image, ImageTk
     PIL_AVAILABLE = True
