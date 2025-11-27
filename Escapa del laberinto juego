@@ -28,6 +28,16 @@ TIEMPO_REAPARICION_ENEMIGO = 10  # segundos
 COOLDOWN_TRAMPA = 5  # segundos entre colocaciones
 MAX_TRAMPAS_ACTIVAS = 3
 
+# Configuración de dificultad
+DIFICULTAD_FACIL = {
+    'escapa': 6,    # frames entre movimientos (más lento)
+    'cazador': 5
+}
+DIFICULTAD_DIFICIL = {
+    'escapa': 3,    # frames entre movimientos (más rápido)
+    'cazador': 2
+}
+
 COSTO_CORRER_POR_MOVIMIENTO = 10
 RECUPERACION_ENERGIA_POR_TURNO = 5
 ENERGIA_MAXIMA = 100
@@ -1219,7 +1229,7 @@ class JuegoLaberinto:
                     self._image_refs = self._image_refs[-150:]
                 return
 
-        # Fallback para jugador sin sprite o para enemigos: dibujo simple
+        #  para jugador sin sprite o para enemigos: dibujo simple
         x1 = x + 2
         y1 = y + 2
         x2 = x1 + tam - 4
@@ -1227,3 +1237,227 @@ class JuegoLaberinto:
         self.canvas.create_oval(x1, y1, x2, y2, fill=color, outline="black", width=2)
         
   
+
+    def manejar_tecla(self, event):
+        """Maneja las teclas presionadas"""
+        if not self.juego_activo or self.juego_pausado:
+            if event.keysym == "Escape":
+                self.mostrar_menu_principal()
+            return
+
+        tecla = event.keysym.lower()
+        corriendo = bool(event.state & 0x1)  # Shift presionado
+
+        # Movimiento
+        direcciones = {
+            'w': (-1, 0), 'up': (-1, 0),
+            's': (1, 0), 'down': (1, 0),
+            'a': (0, -1), 'left': (0, -1),
+            'd': (0, 1), 'right': (0, 1)
+        }
+
+        if tecla in direcciones:
+            dr, dc = direcciones[tecla]
+
+            # Actualizar la dirección del sprite según la tecla
+            if tecla in ['w', 'up']:
+                self.jugador.direccion = "up"
+            elif tecla in ['s', 'down']:
+                self.jugador.direccion = "down"
+            elif tecla in ['a', 'left']:
+                self.jugador.direccion = "left"
+            elif tecla in ['d', 'right']:
+                self.jugador.direccion = "right"
+
+            nueva_r = self.jugador.posicion.r + dr
+            nueva_c = self.jugador.posicion.c + dc
+
+            if self.jugador.mover(self.generador.mapa, nueva_r, nueva_c, corriendo):
+                self.verificar_colisiones()
+                self.verificar_victoria()
+                self.actualizar_interfaz()
+                self.dibujar_mapa()
+
+            return
+
+
+        # Colocar trampa (solo en modo escapa)
+        elif tecla == 'space' and self.modo_juego == "escapa":
+            if self.jugador.colocar_trampa_en_mapa(self.generador.mapa):
+                self.dibujar_mapa()
+
+        # Pausar
+        elif tecla == 'p':
+            self.pausar_juego()
+        
+        # Reiniciar juego
+        elif tecla == 'r':
+            self.reiniciar_juego()
+
+        # Terminar juego en modo cazador
+        elif tecla == 'q' and self.modo_juego == "cazador":
+            resultado = messagebox.askyesno(
+                "Terminar Juego", 
+                f"¿Deseas terminar el juego?\nPuntaje actual: {self.jugador.puntaje}"
+            )
+            if resultado:
+                self.fin_juego(True, f"Juego terminado voluntariamente")
+
+        # Menú principal
+        elif tecla == 'escape':
+            self.mostrar_menu_principal()
+
+    def loop_juego(self):
+        """Loop principal del juego"""
+        if not self.juego_activo or self.juego_pausado:
+            self.root.after(100, self.loop_juego)
+            return
+
+        # Incrementar contador de frames
+        self.contador_frames += 1
+
+        # Mover enemigos con diferentes velocidades según el modo y dificultad
+        if self.dificultad == "facil":
+            frames_enemigo = DIFICULTAD_FACIL[self.modo_juego]
+        else:  # dificil
+            frames_enemigo = DIFICULTAD_DIFICIL[self.modo_juego]
+        
+        if self.contador_frames % frames_enemigo == 0:
+            for enemigo in self.enemigos:
+                if enemigo.vivo:
+                    if self.modo_juego == "escapa":
+                        enemigo.mover_hacia_objetivo(self.generador.mapa, self.jugador.posicion, huir=False)
+                    else:  # modo cazador
+                        # Encontrar la salida más cercana al enemigo
+                        salida_cercana = self.encontrar_salida_mas_cercana(enemigo.posicion)
+                        if salida_cercana:
+                            enemigo.mover_hacia_objetivo(self.generador.mapa, salida_cercana, huir=False)
+                        else:
+                            # Si no hay salidas, huir del jugador como respaldo
+                            enemigo.mover_hacia_objetivo(self.generador.mapa, self.jugador.posicion, huir=True)
+                elif enemigo.puede_reaparecer():
+                    # Reaparecer enemigo en una posición segura
+                    posiciones_libres = obtener_posiciones_libres(self.generador.mapa, Camino)
+                    # Filtrar posiciones muy cerca del jugador y evitar trampas
+                    posiciones_validas = []
+                    for pos in posiciones_libres:
+                        distancia = abs(pos.r - self.jugador.posicion.r) + abs(pos.c - self.jugador.posicion.c)
+                        casilla = self.generador.mapa[pos.r][pos.c]
+                        if distancia >= 4 and not isinstance(casilla, Trampa):
+                            posiciones_validas.append(pos)
+                    
+                    if posiciones_validas:
+                        enemigo.posicion = random.choice(posiciones_validas)
+                        enemigo.vivo = True
+
+        # Verificar colisiones
+        self.verificar_colisiones()
+
+        # Verificar condiciones de victoria/derrota
+        self.verificar_victoria()
+
+        # Recuperar energía del jugador
+        self.jugador.recuperar_energia()
+
+        # Actualizar interfaz
+        self.actualizar_interfaz()
+        self.dibujar_mapa()
+
+        # Continuar el loop
+        self.root.after(100, self.loop_juego)  #movimiento mas fluido
+
+    def encontrar_salida_mas_cercana(self, posicion_enemigo):
+        """Encuentra la salida más cercana al enemigo"""
+        if not self.generador.salidas:
+            return None
+        
+        salida_mas_cercana = None
+        distancia_minima = float('inf')
+        
+        for salida in self.generador.salidas:
+            distancia = abs(posicion_enemigo.r - salida.r) + abs(posicion_enemigo.c - salida.c)
+            if distancia < distancia_minima:
+                distancia_minima = distancia
+                salida_mas_cercana = salida
+        
+        return salida_mas_cercana
+
+    def verificar_colisiones(self):
+        """Verifica colisiones entre jugador y enemigos/trampas"""
+        # Verificar colisión con enemigos
+        for enemigo in self.enemigos:
+            if (enemigo.vivo and
+                    self.jugador.posicion == enemigo.posicion):
+
+                if self.modo_juego == "escapa":
+                    # En modo escapa, enemigo atrapa al jugador
+                    self.fin_juego(False, "Te atraparon!")
+                    return
+                else:
+                    # En modo cazador, jugador atrapa al enemigo
+                    enemigo.morir()
+                    # El jugador obtiene puntos por atrapar (el doble de lo que perdería si escapa)
+                    puntos_por_atrapar = 200  # Doble de los 100 que perdería si escapa
+                    self.jugador.puntaje += puntos_por_atrapar
+                    self.generar_nuevo_enemigo()
+
+        # Verificar si el jugador está en una trampa (solo enemigos activan trampas)
+        casilla_actual = self.generador.mapa[self.jugador.posicion.r][self.jugador.posicion.c]
+        if isinstance(casilla_actual, Trampa) and casilla_actual.activa:
+            # Solo los enemigos activan las trampas, no el jugador
+            pass
+
+        # Verificar si algún enemigo está en una trampa (solo en modo escapa)
+        if self.modo_juego == "escapa":
+            for enemigo in self.enemigos:
+                if not enemigo.vivo:
+                    continue
+
+                casilla_enemigo = self.generador.mapa[enemigo.posicion.r][enemigo.posicion.c]
+                if isinstance(casilla_enemigo, Trampa) and casilla_enemigo.activa:
+                    # Activar trampa - el cazador muere inmediatamente
+                    casilla_enemigo.activar_trampa()
+                    enemigo.morir()
+                    
+                    # Pequeño bono de puntos adicional por eliminar cazador
+                    bonus_trampa = 50  # Pequeño bono adicional
+                    self.jugador.puntaje += bonus_trampa
+                    self.jugador.trampas_activas -= 1
+
+                    # La trampa desaparece del mapa
+                    self.generador.mapa[enemigo.posicion.r][enemigo.posicion.c] = Camino()
+
+    def verificar_victoria(self):
+        """Verifica condiciones de victoria y enemigos en salidas"""
+        # Verificar si algún enemigo llegó a una salida en modo cazador
+        if self.modo_juego == "cazador":
+            for enemigo in self.enemigos:
+                if enemigo.vivo:
+                    casilla_enemigo = self.generador.mapa[enemigo.posicion.r][enemigo.posicion.c]
+                    if isinstance(casilla_enemigo, Salida):
+                        # Enemigo escapó, el jugador pierde puntos
+                        puntos_perdidos = 100
+                        self.jugador.puntaje = max(0, self.jugador.puntaje - puntos_perdidos)
+                        # Remover este enemigo y generar uno nuevo
+                        enemigo.morir()
+                        self.generar_nuevo_enemigo()
+                        break
+        
+        # Verificar victoria del jugador
+        casilla_actual = self.generador.mapa[self.jugador.posicion.r][self.jugador.posicion.c]
+        if isinstance(casilla_actual, Salida):
+            if self.modo_juego == "escapa":
+                # En modo escapa, llegar a la salida es victoria
+                tiempo_transcurrido = time.time() - self.tiempo_inicio
+                # Puntaje basado en tiempo: menor tiempo = mayor puntuación
+                # Puntaje base: 2000 puntos, menos 20 puntos por segundo
+                puntaje_tiempo = max(100, 2000 - int(tiempo_transcurrido * 20))
+                # Bonus por dificultad (número de enemigos)
+                bonus_dificultad = NUM_ENEMIGOS * 100
+                puntaje_total = puntaje_tiempo + bonus_dificultad + self.jugador.puntaje
+                self.jugador.puntaje = puntaje_total
+                self.fin_juego(True, f"¡Escapaste! Tiempo: {tiempo_transcurrido:.1f}s - Puntaje: {puntaje_total}")
+            else:
+                # En modo cazador, el jugador no puede usar las salidas para ganar
+                # Las salidas solo sirven para que escapen los enemigos
+                pass
