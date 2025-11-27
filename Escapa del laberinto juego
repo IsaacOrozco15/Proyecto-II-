@@ -1,7 +1,7 @@
 # Segundo proyecto de introducción a la programación - Escapa del Laberinto
 # Isaac Orozco y Daniel Araya
 #
-
+#
 # Imports estándar de Python
 import random
 import time
@@ -680,3 +680,29 @@ class Enemigo:
         return (not self.vivo and
                 time.time() - self.tiempo_muerte >= TIEMPO_REAPARICION_ENEMIGO)
 
+
+
+# ----------------- FUNCIÓN DE PRUEBA -----------------
+def probar_generacion_mapa():
+    """Función para probar la generación del mapa"""
+    print("=== PRUEBA DE GENERACIÓN DE MAPA ===")
+
+    generador = generar_mapa_juego()
+
+    print(f"Posición del jugador: {generador.posicion_jugador}")
+    print(f"Salidas: {generador.salidas}")
+    print(f"Camino válido encontrado: {generador.verificar_camino_valido()}")
+    print("\nMapa generado:")
+    generador.mostrar_mapa()
+
+    # Probar colocación de enemigos
+    posiciones_enemigos = obtener_posiciones_enemigos(generador.mapa)
+    print(f"Posiciones para enemigos: {posiciones_enemigos}")
+
+    # Crear jugador y enemigos de prueba
+    jugador = Jugador(generador.posicion_jugador)
+    enemigos = [Enemigo(pos) for pos in posiciones_enemigos]
+
+    print(f"\nJugador creado en: {jugador.posicion}")
+    print(f"Energía inicial: {jugador.energia}")
+    print(f"Enemigos creados: {len(enemigos)}")
