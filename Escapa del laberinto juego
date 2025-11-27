@@ -1461,3 +1461,200 @@ class JuegoLaberinto:
                 # En modo cazador, el jugador no puede usar las salidas para ganar
                 # Las salidas solo sirven para que escapen los enemigos
                 pass
+            def generar_nuevo_enemigo(self):
+                """Genera un nuevo enemigo en una posición aleatoria si hay menos del máximo"""
+        # Solo generar si tenemos menos enemigos del máximo permitido
+        enemigos_vivos = sum(1 for enemigo in self.enemigos if enemigo.vivo)
+        if enemigos_vivos >= NUM_ENEMIGOS:
+            return  # Ya tenemos suficientes enemigos
+            
+        posiciones_libres = obtener_posiciones_libres(self.generador.mapa, Camino)
+        # No generar muy cerca del jugador
+        posiciones_validas = [pos for pos in posiciones_libres
+                              if abs(pos.r - self.jugador.posicion.r) + abs(pos.c - self.jugador.posicion.c) > 5]
+
+        if posiciones_validas:
+            nueva_posicion = random.choice(posiciones_validas)
+            self.enemigos.append(Enemigo(nueva_posicion))
+
+    def fin_juego(self, victoria, mensaje):
+        """Termina el juego y muestra resultados"""
+        self.juego_activo = False
+
+        # Calcular tiempo transcurrido
+        tiempo_transcurrido = time.time() - self.tiempo_inicio
+
+        # Mostrar mensaje de resultado
+        if victoria:
+            if self.modo_juego == "escapa":
+                messagebox.showinfo("¡Victoria!", mensaje)
+            else:
+                messagebox.showinfo("Juego Terminado", mensaje)
+        else:
+            messagebox.showinfo("Derrota", mensaje)
+
+        # Guardar puntaje (siempre guardar en modo escapa cuando gana, en cazador siempre)
+        if victoria or self.modo_juego == "cazador":
+            self.sistema_puntajes.agregar_puntaje(
+                self.nombre_jugador,
+                self.jugador.puntaje,
+                self.modo_juego
+            )
+
+        # Mostrar puntaje final
+        messagebox.showinfo(
+            "Puntaje Final",
+            f"Jugador: {self.nombre_jugador}\n"
+            f"Puntaje: {self.jugador.puntaje}\n"
+            f"Tiempo: {tiempo_transcurrido:.1f}s"
+        )
+
+        self.mostrar_menu_principal()
+
+    def pausar_juego(self):
+        """Pausa o reanuda el juego"""
+        if not self.juego_activo:
+            return
+
+        self.juego_pausado = not self.juego_pausado
+        self.btn_pausar.config(text="Reanudar" if self.juego_pausado else "Pausar")
+
+        if self.juego_pausado:
+            self.canvas.create_text(
+                COLUMNAS * self.TAMANO_CASILLA // 2,
+                FILAS * self.TAMANO_CASILLA // 2,
+                text="PAUSADO\nPresiona P para continuar",
+                font=("Arial", 16, "bold"),
+                fill="red",
+                tags="pausa"
+            )
+        else:
+            self.canvas.delete("pausa")
+    
+    def reiniciar_juego(self):
+        """Reinicia el juego actual con el mismo modo y jugador"""
+        if not self.modo_juego or not self.nombre_jugador:
+            return  # Solo reinicia si ya hay un juego activo
+        
+        # Guardar datos actuales
+        modo_actual = self.modo_juego
+        nombre_actual = self.nombre_jugador
+        
+        # Reiniciar variables del juego
+        self.juego_activo = True  # Reactivar el juego
+        self.juego_pausado = False
+        self.tiempo_inicio = time.time()
+        self.contador_frames = 0
+
+        # Generar nuevo mapa
+        self.generador = generar_mapa_juego()
+
+        # Crear nuevo jugador
+        self.jugador = Jugador(self.generador.posicion_jugador)
+
+        # Crear nuevos enemigos
+        posiciones_enemigos = obtener_posiciones_enemigos(self.generador.mapa, NUM_ENEMIGOS, self.jugador.posicion)
+        self.enemigos = [Enemigo(pos) for pos in posiciones_enemigos]
+
+        # Restaurar datos
+        self.modo_juego = modo_actual
+        self.nombre_jugador = nombre_actual
+
+        # Actualizar interfaz
+        self.btn_pausar.config(text="Pausar")
+        self.canvas.delete("pausa")  # Limpiar mensaje de pausa si existe
+        self.actualizar_interfaz()
+        self.dibujar_mapa()  # Dibujar el nuevo mapa
+        self.dibujar_mapa()
+
+    def actualizar_interfaz(self):
+        """Actualiza la información mostrada en la interfaz"""
+        if not self.jugador:
+            return
+
+        self.label_nombre.config(text=f"Jugador: {self.nombre_jugador}")
+        self.label_modo.config(text=f"Modo: {self.modo_juego.title()}")
+        self.label_puntaje.config(text=f"Puntaje: {self.jugador.puntaje}")
+
+        if self.juego_activo:
+            tiempo_transcurrido = time.time() - self.tiempo_inicio
+            self.label_tiempo.config(text=f"Tiempo: {tiempo_transcurrido:.1f}s")
+
+        # Actualizar barra de energía
+        self.barra_energia.config(value=self.jugador.energia)
+        self.label_energia.config(text=f"{self.jugador.energia}/{ENERGIA_MAXIMA}")
+
+        # Actualizar información de trampas en modo escapa
+        for widget in self.frame_trampas.winfo_children():
+            widget.destroy()
+
+        if self.modo_juego == "escapa":
+            tk.Label(self.frame_trampas, text="Trampas:", font=("Arial", 10, "bold")).pack(anchor="w")
+            tk.Label(self.frame_trampas, text=f"Activas: {self.jugador.trampas_activas}/{MAX_TRAMPAS_ACTIVAS}").pack(
+                anchor="w")
+
+            tiempo_desde_ultima = time.time() - self.jugador.ultimo_uso_trampa
+            cooldown_restante = max(0, COOLDOWN_TRAMPA - tiempo_desde_ultima)
+            tk.Label(self.frame_trampas, text=f"Cooldown: {cooldown_restante:.1f}s").pack(anchor="w")
+
+    def mostrar_puntajes(self):
+        """Muestra la ventana de puntajes"""
+        ventana_puntajes = tk.Toplevel(self.root)
+        ventana_puntajes.title("Puntajes")
+        ventana_puntajes.geometry("400x500")
+        ventana_puntajes.resizable(False, False)
+
+        # Top 5 Modo Escapa
+        tk.Label(ventana_puntajes, text="TOP 5 - MODO ESCAPA", font=("Arial", 14, "bold")).pack(pady=10)
+
+        top_escapa = self.sistema_puntajes.obtener_top5("escapa")
+        if top_escapa:
+            for i, puntaje in enumerate(top_escapa, 1):
+                tk.Label(
+                    ventana_puntajes,
+                    text=f"{i}. {puntaje['nombre']} - {puntaje['puntaje']} pts",
+                    font=("Arial", 10)
+                ).pack()
+        else:
+            tk.Label(ventana_puntajes, text="No hay puntajes registrados", font=("Arial", 9)).pack()
+
+        tk.Label(ventana_puntajes, text="", height=2).pack()  # Espaciador
+
+        # Top 5 Modo Cazador
+        tk.Label(ventana_puntajes, text="TOP 5 - MODO CAZADOR", font=("Arial", 14, "bold")).pack(pady=10)
+
+        top_cazador = self.sistema_puntajes.obtener_top5("cazador")
+        if top_cazador:
+            for i, puntaje in enumerate(top_cazador, 1):
+                tk.Label(
+                    ventana_puntajes,
+                    text=f"{i}. {puntaje['nombre']} - {puntaje['puntaje']} pts",
+                    font=("Arial", 10)
+                ).pack()
+        else:
+            tk.Label(ventana_puntajes, text="No hay puntajes registrados", font=("Arial", 9)).pack()
+
+        # Botón cerrar
+        tk.Button(
+            ventana_puntajes,
+            text="Cerrar",
+            command=ventana_puntajes.destroy,
+            font=("Arial", 10),
+            width=15
+        ).pack(pady=20)
+
+    def ejecutar(self):
+        """Ejecuta el juego"""
+        self.root.mainloop()
+
+
+# ----------------- FUNCIÓN PRINCIPAL -----------------
+def main():
+    """Función principal del juego"""
+    juego = JuegoLaberinto()
+    juego.ejecutar()
+
+
+# Ejecutar el juego
+if __name__ == "__main__":
+    main()
