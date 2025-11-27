@@ -159,7 +159,7 @@ class Salida(Casilla):
 
     def accesible_por_jugador(self): return True
 
-    def accesible_por_enemigo(self): return False  # Los cazadores no pueden usar las salidas
+    def accesible_por_enemigo(self): return True  # Los enemigos pueden usar las salidas
 
 
 class Trampa(Casilla):
